@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Luma Translate",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "description": "ページ全体も、選んだ一文も。自分の DeepSeek API で、読むことに集中できる翻訳を。",
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "sidePanel"],
+  "host_permissions": ["https://api.deepseek.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "Luma Translate を開く"},
+  "side_panel": {"default_path": "panel.html"},
+  "options_page": "settings.html",
+  "icons": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png"},
+  "commands": {
+    "translate-page": {
+      "suggested_key": {"default": "Alt+Shift+L"},
+      "description": "ページ全体を翻訳"
+    },
+    "translate-selection": {
+      "suggested_key": {"default": "Alt+Shift+S"},
+      "description": "選択範囲を翻訳"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"
+  }
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>設定 — Luma Translate</title><link rel="stylesheet" href="ui.css"></head>
+<body class="settings-page">
+  <header class="settings-header"><a class="brand" href="settings.html"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M27 2C8 2 1 13 6 25c5-8 11-10 16-14-3 6-10 9-15 16l-3 6 3 1 4-8C25 29 31 15 27 2Z"/></svg>Luma Translate</a><span class="small muted">YOUR WORDS. YOUR WORLD.</span><span class="badge">v0.1.0</span></header>
+  <div class="settings-layout">
+    <aside class="settings-aside"><span class="eyebrow">MAKE IT YOURS</span><h1>A quieter<br>way to read.</h1><p>読むことに集中できる翻訳を。<br>あなたの API と、あなたの言葉で。</p><nav class="settings-nav" aria-label="設定項目"><a href="#connection">01　翻訳エンジン</a><a href="#reading">02　読み方の設定</a><a href="#extensions">03　翻訳をカスタマイズ</a><a href="#privacy">04　サイトとデータ</a></nav><p class="hint">初めて使うときは API キーを登録し、接続を確認してください。</p><p class="hint">ブラウザの拡張機能メニューから Luma を固定すると、すぐに開けます。</p></aside>
+    <main>
+      <form id="settings-form">
+        <section class="settings-card" id="connection">
+          <div class="section-heading"><span class="section-number">01</span><div><h2>翻訳エンジン</h2><p>使い慣れた API を、あなたのキーで。</p></div></div>
+          <div class="field"><label for="provider">プロバイダー</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="compatible">OpenAI 互換 API</option></select></div>
+          <div class="field" id="endpoint-field" hidden><label for="endpoint">API ベース URL</label><input id="endpoint" type="url" value="https://api.deepseek.com" spellcheck="false" autocomplete="off"><p class="hint">例: https://api.example.com/v1<br>/chat/completions は自動で追加します。HTTPS または localhost を指定してください。</p></div>
+          <div class="field"><label for="model">モデル名</label><input id="model" value="deepseek-flash" list="models" spellcheck="false" autocomplete="off" required maxlength="120"><datalist id="models"><option value="deepseek-flash"><option value="deepseek-v4-pro"></datalist><p class="hint">利用できるモデル名を指定できます。</p></div>
+          <div class="field"><label for="api-key">API キー</label><div class="input-action"><input id="api-key" type="password" placeholder="API キーを入力" autocomplete="off" spellcheck="false" maxlength="4096"><button type="button" id="show-key" aria-pressed="false">表示</button></div><div class="key-state" id="key-state">未登録</div><p class="hint">このブラウザの拡張機能ストレージに保存します。クラウド同期はしません。保存先は OS のキーチェーンではありません。</p></div>
+          <div class="row between"><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" class="small">DeepSeek で API キーを取得 ↗</a><button type="button" class="quiet danger" id="remove-key">保存済みキーを削除</button></div>
+        </section>
+        <section class="settings-card" id="reading">
+          <div class="section-heading"><span class="section-number">02</span><div><h2>読み方の設定</h2><p>いつもの読み方を、初期設定に。</p></div></div>
+          <div class="field-grid"><div class="field"><label for="target">翻訳先の言語</label><select id="target"></select></div><div class="field"><label for="style">翻訳のスタイル</label><select id="style"><option value="natural">自然な文章</option><option value="faithful">原文に忠実</option><option value="simple">やさしい文章</option></select></div></div>
+          <div class="field"><label for="view">表示形式</label><select id="view"><option value="bilingual">原文＋訳文</option><option value="translation">訳文のみ</option></select></div>
+          <p class="hint">ページ全体の翻訳 <kbd class="shortcut">Alt + Shift + L</kbd><br>選択範囲の翻訳 <kbd class="shortcut">Alt + Shift + S</kbd><br>Mac では Alt は Option キーです。割り当てはブラウザの拡張機能ショートカット設定で変更できます。</p>
+        </section>
+        <section class="settings-card" id="extensions">
+          <div class="section-heading"><span class="section-number">03</span><div><h2>翻訳をカスタマイズ</h2><p>必要なルールだけ、少しずつ。</p></div></div>
+          <label class="switch-row"><div class="switch-copy"><div><b>用語辞書を使う</b><span>専門用語や製品名の訳し方を指定します。</span></div></div><input type="checkbox" class="switch" id="glossary-enabled"></label>
+          <div class="field"><label for="glossary">用語と訳語（1 行につき 1 件）</label><textarea id="glossary" rows="5" maxlength="8000" placeholder="deployment = デプロイ&#10;context window = コンテキストウィンドウ"></textarea><p class="hint">辞書は翻訳時の指示として渡します。訳語の完全な一致を保証するものではありません。</p></div>
+          <div class="field"><label for="prompt">カスタムプロンプト</label><textarea id="prompt" rows="4" maxlength="4000" placeholder="例: 技術文書として自然な日本語に。製品名や API 名は原文のまま残してください。"></textarea><p class="hint">ここに入力したルールは、翻訳する文章とともに API に送信します。</p></div>
+        </section>
+        <section class="settings-card" id="privacy">
+          <div class="section-heading"><span class="section-number">04</span><div><h2>サイトとデータ</h2><p>自動翻訳する場所も、自分で選ぶ。</p></div></div>
+          <label>自動翻訳するサイト</label><div id="origins"></div><p class="hint">閲覧中のページの Luma パネルから追加できます。サイトごとにアクセス許可を求めます。</p>
+          <div class="divider"></div><h3>送信するもの、保存するもの。</h3><p class="hint">翻訳する文章・翻訳先・辞書・カスタムプロンプトを、設定した API に送信します。API キーは接続先への認証にだけ使用し、ページ側には渡しません。</p><p class="hint">訳文のキャッシュはバックグラウンド処理のメモリに最大 100 件だけ保持します。永続的な閲覧履歴や解析データは保存しません。API 側での取り扱いは各プロバイダーの規約に従います。翻訳には API 利用料金が発生します。</p><button type="button" id="clear-cache">訳文キャッシュを消去</button>
+        </section>
+        <div class="form-footer"><button type="submit" class="primary" id="save">設定を保存</button><button type="button" id="test">保存して接続を確認</button><span class="hint">接続確認では短い文章を API に送信します。</span></div>
+      </form>
+      <p id="status" class="notice settings-status" role="status" aria-live="polite"></p>
+    </main>
+  </div>
+  <script type="module" src="settings.js"></script>
+</body>
+</html>

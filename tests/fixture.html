@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>FIELD NOTES — Luma QA</title>
+<style>
+body{margin:0;background:#faf9f5;color:#273e35;font:18px/1.8 Georgia,serif}header{border-bottom:1px solid #ddd;padding:24px 7%;display:flex;justify-content:space-between}main{max-width:900px;margin:50px auto;padding:0 30px}h1{font-size:53px;font-weight:400;line-height:1.1;letter-spacing:-2px;max-width:780px}h2{font-size:28px;font-weight:400}.label{font:11px sans-serif;letter-spacing:2px;color:#426657}.intro{font-size:22px;max-width:750px}aside{float:right;width:24%;background:linear-gradient(150deg,#e9e7d2,#86a391 60%,#244d42);height:230px;margin:0 0 20px 30px;border-radius:90px 90px 4px 4px}a{color:#246b55}pre{background:#eef0e9;padding:18px}button{padding:10px}td{border:1px solid #ccc;padding:10px}footer{padding:30px;color:#66796d;font:12px sans-serif}
+</style></head><body><header><strong>FIELD NOTES</strong><span class="label">DESIGN &amp; TECHNOLOGY</span></header>
+<main><span class="label">A MORE THOUGHTFUL INTERNET</span><h1>A quieter way to read the world.</h1><aside aria-hidden="true"></aside>
+<p id="intro" class="intro">Good tools help us stay focused on what matters.</p>
+<p id="linked">They fade into the background and give us more room to <a id="article-link" href="#details">think, create, and connect</a>.</p>
+<p id="markup">Treat this text literally: &lt;img src=x onerror=alert(1)&gt;.</p>
+<h2 id="details">Make room for new ideas.</h2><p id="mixed">Keep this code unchanged: <code>const key = "example";</code> while reading.</p>
+<pre id="code">console.log("Do not translate code.");</pre>
+<p translate="no" id="protected">Never translate this protected text.</p>
+<div contenteditable="true" id="editor">Editable content must stay unchanged.</div>
+<input aria-label="Private input" value="Never send private form data">
+<table><tbody><tr><td id="cell">A useful table cell.</td><td>Another cell.</td></tr></tbody></table>
+<ul><li id="item">A useful list item.</li></ul>
+<button id="original-button">Original action</button><span id="click-count"></span>
+<div id="dynamic"></div></main><footer>Local test article · No real API requests</footer>
+<script>window.clicks=0;document.querySelector('#original-button').onclick=()=>{window.clicks++;document.querySelector('#click-count').textContent=window.clicks;};</script>
+</body></html>
