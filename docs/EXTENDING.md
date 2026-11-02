@@ -2,6 +2,9 @@
 
 Luma uses packaged ES modules with explicit registries, not runtime code downloads.
 The extension is intentionally independent of the DeepSeek Harness runtime.
+These registries are not a plugin lifecycle system: dependency injection, runtime
+mount/unmount, and reversible registrations are not implemented. See
+[the reassessment](REWORK.md) for the missing capabilities and proposed design.
 
 ## Add a compatible endpoint without code
 

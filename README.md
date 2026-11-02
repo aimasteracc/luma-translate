@@ -99,7 +99,7 @@ API キーをソースコードやチャットに貼る必要はありません�
 
 ## 拡張する
 
-DeepSeek Harness の「プラグイン中心」という考え方を参考に、翻訳エンジンと翻訳指示を分離しています。Harness プラグインの実行互換性はありません。
+現行版は、翻訳エンジンと翻訳指示を固定のレジストリに分離した構成です。**DeepSeek Harness 型の Plugin Runtime（依存解決・機能のロード / アンロード・登録の後片付け）は未実装です。** Harness プラグインの実行互換性もありません。設計の不足と具体的な再設計案は [機能・Plugin 設計の再評価](docs/REWORK.md) に記載しています。
 
 - `extension/providers/index.js`: 翻訳エンジンのレジストリと実装。インターフェースは `translate(text, config, apiKey, signal) => Promise<string>`。
 - `extension/core/plugins.js`: 用語辞書・カスタムプロンプトのプラグイン。`id`、`enabled(config)`、`instructions(config)` を持ちます。キーや DOM にはアクセスしません。

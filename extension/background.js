@@ -43,13 +43,13 @@ function cancel(owner) {
   }
 }
 
-async function translate(text, owner) {
+async function translate(text, owner, { fresh = false } = {}) {
   if (typeof text !== "string" || !text.trim() || text.length > 20000) throw new Error("1 回の選択は 1〜20,000 文字にしてください。");
   const { config, apiKey } = await readSettings();
   if (!apiKey) throw new TranslationError("最初に設定画面で API キーを登録してください。", "NO_KEY");
   if ([...pending.values()].filter(x => x.owner === owner).length >= 2) throw new Error("翻訳中です。完了を待ってからお試しください。");
   const key = cacheKey(text, config);
-  if (cache.has(key)) return { text: cache.get(key), cached: true };
+  if (!fresh && cache.has(key)) return { text: cache.get(key), cached: true };
   const controller = new AbortController();
   const id = crypto.randomUUID();
   pending.set(id, { owner, controller });
@@ -111,7 +111,7 @@ async function handle(message, sender) {
   }
   if (message.type === "LUMA_TRANSLATE") {
     if (!sender.tab || sender.frameId !== 0) throw new Error("翻訳はページ本文からのみ実行できます。");
-    return translate(message.text, owner);
+    return translate(message.text, owner, { fresh: message.fresh === true });
   }
   if (message.type === "LUMA_CANCEL") { cancel(owner); return {}; }
   if (message.type === "OPEN_SETTINGS") { await chrome.runtime.openOptionsPage(); return {}; }
@@ -127,7 +127,7 @@ async function handle(message, sender) {
     }
     case "SAVE_SETTINGS": return mutateSettings(() => saveSettings(message));
     case "TEST_CONNECTION": {
-      const result = await translate("Hello, world.", owner);
+      const result = await translate("Hello, world.", owner, { fresh: true });
       return { text: result.text };
     }
     case "PAGE_COMMAND": return forward(message.tabId, message.action, message.data);

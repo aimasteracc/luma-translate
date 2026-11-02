@@ -250,7 +250,7 @@
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  async function showSelection(text) {
+  async function showSelection(text, { fresh = false } = {}) {
     if (!text?.trim()) {
       state.message = "先にページ上の文章を選択してください。";
       report();
@@ -270,7 +270,7 @@
     $(".retry").disabled = true;
     $(".close").focus({ preventScroll: true });
     try {
-      const result = await rpc("LUMA_TRANSLATE", { text: selectionText });
+      const result = await rpc("LUMA_TRANSLATE", { text: selectionText, fresh });
       if (token !== selectionGeneration) return;
       $(".result").textContent = result.text;
       $(".copy").disabled = false;
@@ -290,7 +290,7 @@
     returnFocus?.focus?.({ preventScroll: true });
   }
   $(".close").addEventListener("click", closeSelection);
-  $(".retry").addEventListener("click", () => showSelection(selectionText));
+  $(".retry").addEventListener("click", () => showSelection(selectionText, { fresh: true }));
   $(".copy").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($(".result").textContent);
@@ -319,6 +319,12 @@
     if (event.key === "Escape") { chip.hidden = true; if (!card.hidden) closeSelection(); }
   });
   document.addEventListener("scroll", () => { chip.hidden = true; }, { passive: true });
+  document.addEventListener("selectionchange", () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    const parent = selection?.anchorNode?.parentElement;
+    if (text && parent && !parent.closest(IGNORE)) selectionText = text;
+  });
 
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (sender.id !== chrome.runtime.id) return;
@@ -340,7 +346,7 @@
         case "retry": await start(true); break;
         case "cancel": await stop(); state.message = "中断しました。翻訳済みの箇所は残しています。"; break;
         case "restore": await restore(); break;
-        case "selection": showSelection(message.text || window.getSelection()?.toString()); break;
+        case "selection": showSelection(message.text || window.getSelection()?.toString().trim() || selectionText); break;
         case "state": break;
         default: throw new Error("不明な操作です。");
       }
