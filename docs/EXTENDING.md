@@ -77,6 +77,7 @@ Add an entry in `extension/core/plugins.js`:
 ```js
 {
   id: "preserve-product-names",
+  name: "Preserve product names",
   enabled: config => config.style === "faithful",
   instructions: () => "Keep product names in their original language."
 }

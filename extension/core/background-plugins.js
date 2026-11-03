@@ -14,8 +14,9 @@ export function createBackgroundRuntime() {
   for (const plugin of promptPlugins) {
     runtime.register({
       id: plugin.id,
-      name: plugin.id === "glossary" ? "用語辞書" : "カスタムプロンプト",
-      description: "設定した翻訳ルールをリクエストに追加します。",
+      name: plugin.name || ({ glossary: "用語辞書", "custom-prompt": "カスタムプロンプト" })[plugin.id] || plugin.id,
+      version: plugin.version,
+      description: plugin.description || "設定した翻訳ルールをリクエストに追加します。",
       setup(ctx) {
         ctx.on("translation:instructions", ({ config, instructions }) => {
           if (plugin.enabled(config)) instructions.push(plugin.instructions(config));
