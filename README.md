@@ -3,7 +3,7 @@
 ページ全体も、選んだ一文も。自分の DeepSeek API で、読むことに集中できるブラウザ翻訳。
 
 [![CI](https://github.com/aimasteracc/luma-translate/actions/workflows/ci.yml/badge.svg)](https://github.com/aimasteracc/luma-translate/actions/workflows/ci.yml)
-[初版をダウンロード](https://github.com/aimasteracc/luma-translate/releases/tag/v0.1.0) · [拡張方法](docs/EXTENDING.md) · [検証記録](docs/QA.md)
+[v0.2.0 をダウンロード](https://github.com/aimasteracc/luma-translate/releases/tag/v0.2.0) · [拡張方法](docs/EXTENDING.md) · [検証記録](docs/QA.md)
 
 Chrome / Edge 向けの Manifest V3 拡張機能です。実行時の外部ライブラリ・ビルド工程・独自サーバーは不要です。Immersive Translate の公開機能を参考にした独自実装であり、同製品のコードやブランドの複製ではありません。
 
@@ -16,13 +16,15 @@ Chrome / Edge 向けの Manifest V3 拡張機能です。実行時の外部ラ�
 
 ![設定画面](docs/images/settings-desktop.png)
 
+<img src="docs/images/plugins.png" alt="実際に機能を有効・無効にできる Plugin 管理" width="340">
+
 </details>
 
 画像は実装済み UI のキャプチャです。ローカルテスト用の API 設定を含みます。
 
 ## インストール
 
-**[Releases](https://github.com/aimasteracc/luma-translate/releases) から `luma-translate-0.1.0.zip` をダウンロードして展開**するか、このリポジトリを取得してください。Chrome ウェブストアでの配布はまだ行っていません。
+**[Releases](https://github.com/aimasteracc/luma-translate/releases) から `luma-translate-0.2.0.zip` をダウンロードして展開**するか、このリポジトリを取得してください。Chrome ウェブストアでの配布はまだ行っていません。
 
 1. Chrome で `chrome://extensions`（Edge は `edge://extensions`）を開きます。
 2. 「デベロッパーモード」をオンにします。
@@ -30,7 +32,7 @@ Chrome / Edge 向けの Manifest V3 拡張機能です。実行時の外部ラ�
 4. このプロジェクトの **`extension` フォルダ**を選びます。`manifest.json` が入っているフォルダです。
 5. ブラウザの拡張機能メニューから **Luma Translate を固定**します。
 
-ZIP を使う場合は `dist/luma-translate-0.1.0.zip` を展開し、展開先の `manifest.json` があるフォルダを読み込みます。ZIP 自体を選択する必要はありません。
+ZIP を使う場合は `dist/luma-translate-0.2.0.zip` を展開し、展開先の `manifest.json` があるフォルダを読み込みます。ZIP 自体を選択する必要はありません。
 
 ## 最初の設定
 
@@ -59,7 +61,7 @@ API キーをソースコードやチャットに貼る必要はありません�
 
 ショートカットは `Alt+Shift+L`（全文）と `Alt+Shift+S`（選択）。Mac は Alt の代わりに Option キーです。競合している場合は `chrome://extensions/shortcuts` で変更してください。
 
-自動翻訳は、許可したサイトの次回読み込みから有効になります。初期状態では、どのサイトの文章も自動送信しません。別のタブに移ったとき、必要に応じてそのタブで Luma アイコンを押し、アクセスを有効にしてください。
+自動翻訳は、許可したサイトの次回読み込みから有効になります。初期状態では、どのサイトの文章も自動送信しません。別のサイトへ移ったら、側欄の「このサイトを許可」でそのサイトだけへのアクセスを許可できます。ツールバーの Luma アイコンによる一時アクセスも利用できます。ブラウザ内部ページなどは対象外です。
 
 ページに後から追加された本文も監視して翻訳します。翻訳条件を変更すると、すでに挿入された訳文を一旦取り除きます。「ページ全体を翻訳」で新しい条件を適用してください。表示形式の切り替えだけでは再翻訳しません。
 
@@ -81,9 +83,9 @@ API キーをソースコードやチャットに貼る必要はありません�
 - 訳文はバックグラウンドのメモリに最大 100 件キャッシュします。永続的な翻訳履歴・アクセス解析は保存しません。
 - API の料金・保存・学習利用などの取り扱いは、ご利用のプロバイダーの条件に従います。
 - ページ本文や API の応答を HTML として実行しません。訳文は `textContent` で挿入します。
-- 通常の翻訳は、そのタブへの一時的アクセスで動作します。自動翻訳を選んだサイトだけ永続的なアクセス許可を追加します。
+- ツールバーからの一時アクセス、または明示的に許可したサイトへの永続アクセスで動作します。`tabs` 権限は側欄で対象サイトを識別するために使用し、閲覧履歴は保存しません。全サイトの本文アクセスを初期状態で要求しません。
 
-## 初版の対応範囲
+## 対応範囲
 
 通常の HTTP / HTTPS ページの、メインフレームの DOM 本文が対象です。以下は対象外、または未検証です。
 
@@ -99,7 +101,9 @@ API キーをソースコードやチャットに貼る必要はありません�
 
 ## 拡張する
 
-DeepSeek Harness の「プラグイン中心」という考え方を参考に、翻訳エンジンと翻訳指示を分離しています。Harness プラグインの実行互換性はありません。
+v0.2.0 は共有 Context、サービス依存の宣言、イベントフック、停止時の後片付けを備える同梱 Plugin Runtime を持ちます。「拡張機能」で API、用語辞書、カスタムプロンプト、本文抽出、対訳表示、全文翻訳、選択翻訳、動的本文監視の状態と有効・無効を管理できます。依存機能が無効なら理由を表示し、対訳表示の停止時は原文へ戻します。機能変更後は「ページ全体を翻訳」で再開してください。
+
+DeepSeek Harness の設計思想を参考にした小さな独自実装で、Cordis 自体や Harness 用プラグインとのバイナリ・API 互換性はありません。遠隔コードのインストール機能、サイト別アダプターのカタログ、独立したスケジューラープラグインは未実装です。
 
 - `extension/providers/index.js`: 翻訳エンジンのレジストリと実装。インターフェースは `translate(text, config, apiKey, signal) => Promise<string>`。
 - `extension/core/plugins.js`: 用語辞書・カスタムプロンプトのプラグイン。`id`、`enabled(config)`、`instructions(config)` を持ちます。キーや DOM にはアクセスしません。
@@ -140,3 +144,7 @@ GitHub Actions でも単体テスト・ブラウザテスト・ZIP 作成を実�
 - https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
 
 公開ページの REA 調査と、承認済みの画面イメージを元に作成しました。元の拡張機能の非公開ロジックを再現したという主張ではありません。
+
+## v0.1.0 から更新する
+
+v0.2.0 の ZIP を展開し、以前読み込んだ拡張機能フォルダの内容を更新して `chrome://extensions` で再読み込みしてください。`tabs` 権限の追加を確認し、翻訳対象のページも再読み込みします。同じ拡張機能として更新すれば保存済み設定を維持できます。別の場所から新規読み込みした場合は設定し直してください。

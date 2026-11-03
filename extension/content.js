@@ -4,6 +4,7 @@
   const IGNORE = "script,style,noscript,template,pre,code,kbd,samp,textarea,input,select,button,svg,math,canvas,iframe,[contenteditable]:not([contenteditable=false]),[translate=no],.notranslate,[data-luma]";
   const BLOCKS = "p,h1,h2,h3,h4,h5,h6,li,td,th,figcaption,blockquote,dt,dd,div,section,article";
   const records = new Map();
+  const runtime = new globalThis.LumaRuntime();
   let config = {};
   let generation = 0;
   let queue = [];
@@ -74,10 +75,16 @@
     return style.visibility !== "hidden" && style.display !== "none" && parent.getClientRects().length > 0;
   }
 
-  function collect() {
+  async function collect() {
+    const token = generation;
+    let visited = 0;
     const found = new Set();
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
+      if (++visited % 300 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (token !== generation) return [];
+      }
       const node = walker.currentNode;
       if (!readable(node)) continue;
       const block = node.parentElement.closest(BLOCKS);
@@ -126,10 +133,12 @@
     const output = document.createElement("span");
     output.dataset.luma = "translation";
     output.setAttribute("lang", ({ 日本語: "ja", 简体中文: "zh-CN", 繁體中文: "zh-TW", English: "en", 한국어: "ko", Deutsch: "de", Français: "fr", Español: "es" })[config.target] || "ja");
-    output.style.cssText = "display:block!important;margin:8px 0 16px!important;clear:none!important";
+    const inline = record.source.nodeType === Node.TEXT_NODE;
+    output.style.cssText = inline ? "display:inline!important;margin:0 4px!important" : "display:block!important;margin:8px 0 16px!important;clear:none!important";
     const root = output.attachShadow({ mode: "open" });
     const box = document.createElement("div");
     box.style.cssText = 'color:#153f36;background:#eef5ef;border-left:3px solid #287465;padding:10px 14px;font:400 16px/1.8 "Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;text-align:start;color-scheme:light';
+    if (inline) box.style.cssText = "display:inline;color:#153f36;background:#eef5ef;padding:1px 4px;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere";
     box.textContent = text;
     root.append(box);
     record.source.after(output);
@@ -163,7 +172,7 @@
       record.status = "pending";
       rpc("LUMA_TRANSLATE", { text: record.original }).then(result => {
         if (token !== generation) return;
-        if (render(record, result.text)) state.done++;
+        if (runtime.get("renderer").render(record, result.text)) state.done++;
         else { records.delete(record.source); state.total--; }
       }).catch(error => {
         if (token !== generation) return;
@@ -191,12 +200,12 @@
     active = 0;
     clearTimeout(scheduled);
     for (const record of records.values()) if (["pending", "queued"].includes(record.status)) record.status = "cancelled";
-    await rpc("LUMA_CANCEL");
     report();
+    await rpc("LUMA_CANCEL");
   }
 
   async function restore() {
-    await stop();
+    const stopped = stop();
     selectionGeneration++;
     card.hidden = true;
     chip.hidden = true;
@@ -207,6 +216,7 @@
     records.clear();
     Object.assign(state, { done: 0, total: 0, failed: 0, message: "" });
     report();
+    await stopped;
   }
 
   async function start(retry = false) {
@@ -218,7 +228,7 @@
       await rpc("LUMA_CANCEL");
     }
     state.message = "";
-    watching = true;
+    watching = runtime.plugins.get("dynamic")?.state === "active";
     for (const [source, record] of records) {
       if (record.status === "cancelled" || (retry && record.status === "failed")) {
         records.delete(source);
@@ -226,14 +236,14 @@
         if (record.status === "failed") state.failed--;
       }
     }
-    enqueue(collect());
+    enqueue(await runtime.get("extractor").collect());
     if (!state.total) { state.message = "翻訳できる本文が見つかりませんでした。範囲選択をお試しください。"; report(); }
   }
 
   const observer = new MutationObserver(() => {
     if (!watching) return;
     clearTimeout(scheduled);
-    scheduled = setTimeout(() => {
+    scheduled = setTimeout(async () => {
       for (const [source, record] of records) {
         if (record.status === "pending" || record.status === "queued") continue;
         if (!source.isConnected || sourceText(source) !== record.original) {
@@ -245,20 +255,22 @@
           if (record.status === "failed") state.failed--;
         }
       }
-      enqueue(collect());
+      enqueue(await runtime.get("extractor").collect());
     }, 600);
   });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  async function showSelection(text) {
+
+  async function showSelection(text, { fresh = false } = {}) {
     if (!text?.trim()) {
       state.message = "先にページ上の文章を選択してください。";
       report();
       return;
     }
-    if (state.running || watching) await stop();
-    selectionText = text.trim();
     const token = ++selectionGeneration;
+    if (state.running || watching) await stop();
+    else if (!card.hidden) await rpc("LUMA_CANCEL");
+    if (token !== selectionGeneration) return;
+    selectionText = text.trim();
     returnFocus = document.activeElement;
     chip.hidden = true;
     card.hidden = false;
@@ -270,7 +282,7 @@
     $(".retry").disabled = true;
     $(".close").focus({ preventScroll: true });
     try {
-      const result = await rpc("LUMA_TRANSLATE", { text: selectionText });
+      const result = await rpc("LUMA_TRANSLATE", { text: selectionText, fresh });
       if (token !== selectionGeneration) return;
       $(".result").textContent = result.text;
       $(".copy").disabled = false;
@@ -289,21 +301,59 @@
     rpc("LUMA_CANCEL").catch(() => {});
     returnFocus?.focus?.({ preventScroll: true });
   }
-  $(".close").addEventListener("click", closeSelection);
-  $(".retry").addEventListener("click", () => showSelection(selectionText));
-  $(".copy").addEventListener("click", async () => {
+  runtime.register({
+    id: "extractor", name: "本文抽出", provides: ["extractor"],
+    description: "コード・入力欄を除外し、ページ本文を読み取ります。",
+    setup(ctx) { ctx.provide("extractor", { collect }); },
+  }).register({
+    id: "renderer", name: "対訳表示", provides: ["renderer"],
+    description: "原文を保持して訳文を表示します。停止時は原文へ戻します。",
+    setup(ctx) {
+      ctx.provide("renderer", { render });
+      return () => { restore().catch(() => {}); };
+    },
+  }).register({
+    id: "page", name: "ページ翻訳", inject: ["extractor", "renderer"], provides: ["page"],
+    description: "全文の翻訳・中断・失敗箇所の再試行を行います。",
+    setup(ctx) {
+      ctx.provide("page", { start });
+      return () => { stop().catch(() => {}); };
+    },
+  }).register({
+    id: "dynamic", name: "追加の本文を翻訳", inject: ["page"],
+    description: "スクロールや画面更新で追加された本文も翻訳します。",
+    setup(ctx) {
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+      return () => { observer.disconnect(); clearTimeout(scheduled); watching = false; report(); };
+    },
+  }).register({
+    id: "selection", name: "選択範囲の翻訳", provides: ["selection"],
+    description: "選択した文章をポップアップで翻訳・コピーできます。",
+    setup(ctx) {
+      ctx.provide("selection", { show: showSelection });
+      ctx.effect(() => {
+        selectionGeneration++;
+        selectionText = "";
+        chip.hidden = true;
+        card.hidden = true;
+        rpc("LUMA_CANCEL").catch(() => {});
+      });
+  ctx.listen($(".close"), "click", closeSelection);
+  ctx.listen($(".retry"), "click", () => showSelection(selectionText, { fresh: true }));
+  ctx.listen($(".copy"), "click", async () => {
     try {
       await navigator.clipboard.writeText($(".result").textContent);
       $(".copy").textContent = "コピーしました";
       setTimeout(() => { $(".copy").textContent = "コピー"; }, 1600);
     } catch { $(".copy").textContent = "訳文を選択してコピー"; }
   });
-  $(".settings").addEventListener("click", () => chrome.runtime.sendMessage({ type: "OPEN_SETTINGS" }));
-  chip.addEventListener("pointerdown", event => event.preventDefault());
-  chip.addEventListener("click", () => showSelection(selectionText));
-  document.addEventListener("mouseup", event => {
+  ctx.listen($(".settings"), "click", () => chrome.runtime.sendMessage({ type: "OPEN_SETTINGS" }));
+  ctx.listen(chip, "pointerdown", event => event.preventDefault());
+  ctx.listen(chip, "click", () => showSelection(selectionText));
+  ctx.listen(document, "mouseup", event => {
     if (event.composedPath().includes(host)) return;
     setTimeout(() => {
+      if (runtime.plugins.get("selection")?.state !== "active") return;
       const selection = window.getSelection();
       const parent = selection?.anchorNode?.parentElement;
       const text = selection?.toString().trim();
@@ -315,16 +365,26 @@
       chip.hidden = false;
     }, 0);
   });
-  document.addEventListener("keydown", event => {
+  ctx.listen(document, "keydown", event => {
     if (event.key === "Escape") { chip.hidden = true; if (!card.hidden) closeSelection(); }
   });
-  document.addEventListener("scroll", () => { chip.hidden = true; }, { passive: true });
+  ctx.listen(document, "scroll", () => { chip.hidden = true; }, { passive: true });
+  ctx.listen(document, "selectionchange", () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    const parent = selection?.anchorNode?.parentElement;
+    if (text && parent && !parent.closest(IGNORE)) selectionText = text;
+  });
+
+    },
+  });
 
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (sender.id !== chrome.runtime.id) return;
     if (message.type === "LUMA_CONFIG") {
       const previous = config;
       config = message.config;
+      runtime.configure(config.disabledPlugins);
       if (message.reset) restore().catch(() => {});
       else if (previous.view !== config.view) {
         for (const record of records.values()) applyView(record);
@@ -336,11 +396,12 @@
     (async () => {
       await configReady;
       switch (message.action) {
-        case "translate": await start(); break;
-        case "retry": await start(true); break;
+        case "translate": await runtime.get("page").start(); break;
+        case "retry": await runtime.get("page").start(true); break;
         case "cancel": await stop(); state.message = "中断しました。翻訳済みの箇所は残しています。"; break;
         case "restore": await restore(); break;
-        case "selection": showSelection(message.text || window.getSelection()?.toString()); break;
+        case "selection": runtime.get("selection").show(message.text || window.getSelection()?.toString().trim() || selectionText); break;
+        case "plugins": return runtime.list();
         case "state": break;
         default: throw new Error("不明な操作です。");
       }
@@ -352,6 +413,7 @@
 
   const configReady = rpc("LUMA_PUBLIC_CONFIG").then(value => {
     config = value;
-    if (config.autoOrigins?.includes(location.origin) && config.hasKey) start();
+    runtime.configure(config.disabledPlugins);
+    if (config.autoOrigins?.includes(location.origin) && config.hasKey && runtime.plugins.get("page")?.state === "active") start().catch(error => { state.message = error.message; report(); });
   }).catch(error => { state.message = error.message; report(); });
 })();

@@ -1,4 +1,4 @@
-import { buildMessages } from "../core/config.js";
+import { buildMessages } from "../core/messages.js";
 
 export class TranslationError extends Error {
   constructor(message, code = "API_ERROR") { super(message); this.code = code; }

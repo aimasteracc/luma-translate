@@ -1,10 +1,12 @@
 import { DEFAULTS, LANGUAGES, validateConfig } from "./core/config.js";
+import { providers } from "./providers/index.js";
 import { $, rpc, notice, fillLanguages } from "./ui.js";
 
 let config = { ...DEFAULTS };
 let hasKey = false;
 let busy = false;
 let dirty = false;
+$("#provider").replaceChildren(...Object.entries(providers).map(([id, provider]) => new Option(provider.label, id)));
 
 function paint(data) {
   config = data.config;
@@ -54,7 +56,7 @@ function collect() {
 
 async function save() {
   const next = collect();
-  if (next.provider === "compatible") {
+  if (next.provider !== "deepseek") {
     const allowed = await chrome.permissions.request({ origins: [`${new URL(next.endpoint).origin}/*`] });
     if (!allowed) throw new Error("接続先 API へのアクセスが許可されませんでした。");
   }
@@ -110,5 +112,13 @@ $("#clear-cache").addEventListener("click", () => run(async () => {
 }));
 window.addEventListener("beforeunload", event => {
   if (dirty) { event.preventDefault(); event.returnValue = ""; }
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  // Plugin switches in the side panel must survive saving an already-open form.
+  if (area === "local" && changes.config?.newValue) {
+    config.disabledPlugins = changes.config.newValue.disabledPlugins || [];
+    config.glossaryEnabled = changes.config.newValue.glossaryEnabled;
+    if (!dirty) $("#glossary-enabled").checked = config.glossaryEnabled;
+  }
 });
 rpc("GET_SETTINGS").then(paint).catch(error => notice(error.message, true));

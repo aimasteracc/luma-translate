@@ -6,3 +6,5 @@
 @media(max-width:720px){.settings-header{padding:22px}.settings-header .small{display:none}.settings-layout{grid-template-columns:1fr;gap:16px;padding:26px 20px 50px}.settings-aside{position:static}.settings-aside h1{font-size:36px;margin-bottom:12px}.settings-nav{display:none}.settings-card{padding:22px 20px}.field-grid{grid-template-columns:1fr;gap:0}}
 @media(prefers-reduced-motion:reduce){*,*:before{transition:none!important;scroll-behavior:auto!important}}
 .panel{height:100vh;overflow:hidden}.panel-header,.panel-footer{flex-shrink:0}.panel-body{min-height:0;overflow-y:auto}
+
+.dialog{max-height:calc(100vh - 32px);overflow:auto;overscroll-behavior:contain}.dialog>.row:first-child{position:sticky;top:-24px;background:var(--paper);padding:12px 0;z-index:1}.plugin-card details{font-size:12px;overflow-wrap:anywhere}.plugin-card summary{cursor:pointer;min-height:32px;padding-top:6px}
