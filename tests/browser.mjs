@@ -39,10 +39,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const temp = await mkdtemp(path.join(os.tmpdir(), "luma-browser-test-"));
 const extension = path.join(temp, "extension");
 await cp(path.join(root, "extension"), extension, { recursive: true });
-const manifest = JSON.parse(await readFile(path.join(extension, "manifest.json")));
-// Only the disposable test copy receives the fixture origin permission.
-manifest.host_permissions.push(`${origin}/*`);
-await writeFile(path.join(extension, "manifest.json"), JSON.stringify(manifest));
+// Use the production manifest unchanged; settings request API access through their real button.
 let executablePath = process.env.CHROMIUM_PATH;
 if (!executablePath && process.platform === "darwin") {
   const cache = path.join(os.homedir(), "Library/Caches/ms-playwright");
@@ -63,6 +60,14 @@ try {
   });
   const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
   const id = new URL(worker.url()).host;
+  const permissions = await context.newPage();
+  await permissions.goto("chrome://extensions/");
+  const grant = pattern => permissions.evaluate(async ({ id, pattern }) => {
+    await chrome.developerPrivate.addHostPermission(id, pattern);
+  }, { id, pattern });
+  // Chromium's native permission prompt is outside Playwright's page DOM.
+  // Grant the API origin through Chrome's own extension settings, not the manifest.
+  await grant(`${origin}/*`);
   const settings = await context.newPage();
   await settings.goto(`chrome-extension://${id}/settings.html`);
   await settings.waitForFunction(() => document.querySelector("#key-state").textContent === "未登録");
@@ -91,13 +96,41 @@ try {
   await settings.setViewportSize({ width: 1240, height: 980 });
   passed("Settings responsive layout at 390px has no horizontal overflow");
   const page = await context.newPage();
-  await page.goto(origin);
-  const tabId = await worker.evaluate(async origin => (await chrome.tabs.query({})).find(tab => tab.url === `${origin}/`).id, origin);
+  const pageOrigin = origin.replace("127.0.0.1", "localhost");
+  await page.goto(pageOrigin);
+  const tabId = await worker.evaluate(async origin => (await chrome.tabs.query({})).find(tab => tab.url === `${origin}/`).id, pageOrigin);
   const command = async (action, data = {}) => {
     const result = await settings.evaluate(async ({ tabId, action, data }) => chrome.runtime.sendMessage({ type: "PAGE_COMMAND", tabId, action, data }), { tabId, action, data });
     assert.equal(result.ok, true, result.error);
     return result.data;
   };
+  const noAccess = await settings.evaluate(async tabId => chrome.runtime.sendMessage({ type: "PAGE_COMMAND", tabId, action: "state" }), tabId);
+  assert.equal(noAccess.ok, false, "A new site must not be silently granted access");
+  const permissionPanel = await context.newPage();
+  await permissionPanel.goto(`chrome-extension://${id}/panel.html`);
+  await page.bringToFront();
+  await worker.evaluate(async tabId => { await chrome.tabs.update(tabId, { active: true }); }, tabId);
+  await permissionPanel.locator("#access-card").waitFor({ state: "visible" });
+  assert.equal(await permissionPanel.locator("#access-origin").textContent(), pageOrigin);
+  assert.equal(await permissionPanel.locator("#translate").isDisabled(), true);
+  await grant(`${pageOrigin}/*`);
+  await permissionPanel.locator("#grant-access").click();
+  await permissionPanel.locator("#access-card").waitFor({ state: "hidden" });
+  await permissionPanel.locator("#translate").click();
+  await page.waitForFunction(() => document.querySelector("#intro + [data-luma=translation]"));
+  passed("Production manifest denies a new site; panel explains access, then its translate button works after site permission");
+  const secondOrigin = origin.replace("127.0.0.1", "second.localhost");
+  const secondPage = await context.newPage();
+  await secondPage.goto(secondOrigin);
+  await permissionPanel.waitForFunction(expected => document.querySelector("#access-origin").textContent === expected && !document.querySelector("#access-card").hidden, secondOrigin);
+  await grant(`${secondOrigin}/*`);
+  await permissionPanel.locator("#grant-access").click();
+  await permissionPanel.locator("#translate").click();
+  await secondPage.waitForFunction(() => document.querySelector("#intro + [data-luma=translation]"));
+  await secondPage.close();
+  await page.bringToFront();
+  passed("Keeping the panel open across a second site uses that site's origin for permission and translation");
+  await permissionPanel.close();
   await command("translate");
   await page.waitForFunction(() => document.querySelector("#intro + [data-luma=translation]")?.shadowRoot?.textContent.includes("優れたツール"));
   await page.waitForFunction(() => document.querySelectorAll("[data-luma=translation]").length >= 10);
@@ -201,7 +234,7 @@ try {
   passed("Cancellation aborts in-flight work and prevents late DOM writes");
   mode = "success";
   await page.bringToFront();
-  const auto = await settings.evaluate(async origin => chrome.runtime.sendMessage({ type: "SET_AUTO", origin, enabled: true }), origin);
+  const auto = await settings.evaluate(async origin => chrome.runtime.sendMessage({ type: "SET_AUTO", origin, enabled: true }), pageOrigin);
   assert.equal(auto.ok, true, auto.error);
   await page.reload();
   await page.waitForFunction(() => document.querySelector("#intro + [data-luma=translation]"), { timeout: 10000 });
@@ -217,15 +250,92 @@ try {
   assert.ok(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await panel.getByRole("button", { name: "拡張機能", exact: true }).click();
   await panel.locator("#plugins-dialog").waitFor({ state: "visible" });
+  await panel.locator('[data-plugin="selection"]').waitFor();
+  await panel.locator('[data-plugin="selection"]').uncheck();
+  await panel.locator("#plugin-status").filter({ hasText: "変更を反映" }).waitFor();
+  const selectText = async () => page.locator("#details").evaluate(node => {
+    const range = document.createRange(); range.selectNodeContents(node);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    node.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await selectText();
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator("[data-luma=controls] .chip").isVisible(), false);
+  await panel.locator('[data-plugin="selection"]').check();
+  await panel.locator("#plugin-status").filter({ hasText: "変更を反映" }).waitFor();
+  await selectText();
+  await page.locator("[data-luma=controls] .chip").waitFor({ state: "visible" });
+  await settings.evaluate(() => chrome.runtime.sendMessage({ type: "CLEAR_CACHE" }));
+  const beforeSelection = requests.length;
+  await page.locator("[data-luma=controls] .chip").click();
+  await page.locator("[data-luma=controls] .result").filter({ hasText: "新しいアイデア" }).waitFor();
+  assert.equal(requests.length, beforeSelection + 1, "Re-enabling must not duplicate listeners or requests");
+  await page.locator("[data-luma=controls] .close").click();
+  passed("Plugin manager disables selection listeners and restores one functional handler on re-enable");
+  await command("translate");
+  await page.waitForFunction(() => document.querySelector("#intro + [data-luma=translation]"));
+  await panel.locator('[data-plugin="renderer"]').uncheck();
+  await page.waitForFunction(() => document.querySelectorAll("[data-luma=translation]").length === 0);
+  const plugins = await command("plugins");
+  assert.equal(plugins.find(p => p.id === "page").state, "blocked");
+  assert.equal(plugins.find(p => p.id === "dynamic").state, "blocked");
+  assert.ok(await page.locator("#intro").isVisible());
+  await panel.locator('[data-plugin="renderer"]').check();
+  await panel.locator("#plugin-status").filter({ hasText: "変更を反映" }).waitFor();
+  await command("translate");
+  await page.waitForFunction(() => document.querySelector("#intro + [data-luma=translation]"));
+  passed("Renderer unload restores DOM, blocks dependent page/watcher plugins, and re-enable recovers translation");
+  await command("restore");
+  await settings.reload();
+  await settings.locator("#glossary").fill("Luma = ルマ");
+  await settings.locator("#save").click();
+  await settings.getByRole("status").filter({ hasText: "保存しました" }).waitFor();
+  await command("selection", { text: "Luma glossary test" });
+  await page.locator("[data-luma=controls] .retry").waitFor({ state: "visible" });
+  await page.waitForFunction(() => !document.querySelector("[data-luma=controls]").shadowRoot.querySelector(".retry").disabled);
+  assert.match(requests.at(-1).body.messages[0].content, /Luma = ルマ/);
+  await panel.locator('[data-plugin="glossary"]').uncheck();
+  await panel.locator("#plugin-status").filter({ hasText: "変更を反映" }).waitFor();
+  await command("selection", { text: "Luma glossary test" });
+  await page.waitForFunction(() => !document.querySelector("[data-luma=controls]").shadowRoot.querySelector(".retry").disabled);
+  assert.doesNotMatch(requests.at(-1).body.messages[0].content, /Luma = ルマ/);
+  passed("Glossary plugin toggle changes actual outgoing API instructions and invalidates cached translations");
+  await panel.screenshot({ path: path.join(output, "plugins.png") });
   await panel.getByRole("button", { name: "閉じる", exact: true }).click();
   passed("Panel layout and plugin settings dialog work at 390px");
   await settings.reload();
   assert.equal(await settings.locator("#api-key").inputValue(), "");
+  if (process.env.LUMA_LIVE_SMOKE === "1") {
+    for (const url of ["https://example.com/", "https://developer.chrome.com/docs/extensions/develop/concepts/activeTab"]) {
+      const remote = await context.newPage();
+      await grant(`${new URL(url).origin}/*`);
+      await remote.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await remote.locator("p").first().waitFor();
+      const originalNode = await remote.locator("p").first().elementHandle();
+      const original = await originalNode.textContent();
+      const remoteId = await worker.evaluate(async url => (await chrome.tabs.query({})).find(tab => tab.url === url)?.id, remote.url());
+      assert.ok(remoteId);
+      const remoteCommand = action => settings.evaluate(async ({ tabId, action }) => chrome.runtime.sendMessage({ type: "PAGE_COMMAND", tabId, action }), { tabId: remoteId, action });
+      await remote.bringToFront();
+      await panel.waitForFunction(expected => document.querySelector("#access-origin").textContent === expected && !document.querySelector("#access-card").hidden, new URL(remote.url()).origin);
+      await panel.locator("#grant-access").click();
+      await panel.locator("#access-card").waitFor({ state: "hidden" });
+      await panel.locator("#translate").click();
+      await remote.locator("[data-luma=translation]").first().waitFor();
+      await remoteCommand("cancel");
+      await remoteCommand("restore");
+      assert.equal(await remote.locator("[data-luma=translation]").count(), 0);
+      assert.equal(await originalNode.evaluate(node => node.isConnected), true);
+      assert.equal(await originalNode.textContent(), original);
+      passed(`Live DOM smoke (mock translation API): ${url}`);
+      await remote.close();
+    }
+  }
   await settings.locator("#remove-key").click();
   await settings.getByRole("status").filter({ hasText: "API キーを削除しました" }).waitFor();
   assert.equal((await worker.evaluate(() => chrome.storage.local.get("apiKey"))).apiKey, "");
   passed("Saved API key can be deleted without exposing its value");
-  await writeFile(path.join(output, "browser-report.json"), JSON.stringify({ date: new Date().toISOString(), tests: results, fixtureOnly: true, realDeepSeekTested: false }, null, 2));
+  await writeFile(path.join(output, "browser-report.json"), JSON.stringify({ date: new Date().toISOString(), tests: results, fixtureOnly: process.env.LUMA_LIVE_SMOKE !== "1", nativePermissionPromptTested: false, realDeepSeekTested: false }, null, 2));
 } catch (error) {
   if (context) {
     for (const [i, page] of context.pages().entries()) await page.screenshot({ path: path.join(output, `failure-${i}.png`) }).catch(() => {});

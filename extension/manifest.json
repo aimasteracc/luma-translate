@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Luma Translate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimum_chrome_version": "116",
   "description": "ページ全体も、選んだ一文も。自分の DeepSeek API で、読むことに集中できる翻訳を。",
-  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "sidePanel"],
+  "permissions": ["activeTab", "tabs", "scripting", "storage", "contextMenus", "sidePanel"],
   "host_permissions": ["https://api.deepseek.com/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": {"service_worker": "background.js", "type": "module"},

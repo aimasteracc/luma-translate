@@ -1,78 +1,121 @@
-# Extending Luma
+# Extending Luma 0.2
 
-Luma uses packaged ES modules with explicit registries, not runtime code downloads.
-The extension is intentionally independent of the DeepSeek Harness runtime.
-These registries are not a plugin lifecycle system: dependency injection, runtime
-mount/unmount, and reversible registrations are not implemented. See
-[the reassessment](REWORK.md) for the missing capabilities and proposed design.
+Luma uses a bundled plugin runtime in `extension/core/runtime.js`. Its ideas are
+borrowed from DeepSeek Harness: declared services, `inject` dependencies,
+context-scoped effects, events, and reversible lifecycle. This is a small browser
+implementation, not Cordis and not an execution environment for Harness plugins.
+No JavaScript is downloaded or evaluated from a plugin marketplace.
 
-## Add a compatible endpoint without code
+## Runtime contract
 
-Choose the compatible API provider in Settings. Supply its base URL, model and key.
-The existing adapter supports non-streaming Chat Completions.
+Register `{ id, name, version, description, inject, provides, setup }`, then call
+`configure(disabledIds)`. `setup(ctx)` is synchronous and can return a cleanup.
+It may start asynchronous work using `ctx.signal`; handle promise rejections.
 
-## Add a new provider protocol
+- `ctx.provide(name, service)` registers a declared service.
+- `ctx.get(name)` obtains a declared dependency.
+- `ctx.on(event, callback)` registers a reversible hook.
+- `ctx.listen(target, event, callback, options)` registers a reversible DOM listener.
+- `ctx.effect(cleanup)` registers cleanup for other resources.
+- `ctx.signal` is aborted on disposal; all registered effects are unwound.
+- `runtime.emit(event, payload)` invokes mounted hooks synchronously.
+- `runtime.list()` returns actual active/disabled/blocked/error status and metadata.
 
-1. Add `extension/providers/my-provider.js`, exporting an async translator.
-2. Register it in `providers/index.js`.
-3. Add its identifier to `validateConfig` in `core/config.js`.
-4. Add its option and necessary fields to settings and the panel label.
-5. Request the exact API origin when saving. Do not request all host access for a provider.
-6. Include translation-affecting settings in `cacheKey`.
-7. Test cancellation, authentication errors, malformed responses and truncation.
+Dependencies mount in service order, even if registered in reverse. Disabling a
+service provider unmounts its dependents first. Failed setup rolls back its
+partial registrations. Reconfiguring an active plugin does not register it twice.
+Persisted `disabledPlugins` is reapplied after worker startup or page injection.
 
-```js
-export async function translate(text, config, apiKey, signal) {
-  // Send only the intended text/settings to the selected provider.
-  // Respect signal, time out before MV3's fetch-response deadline,
-  // reject redirects, and return plain translated text.
-}
-```
+Keep IDs stable. A plugin must declare all provided/required services. Do not
+register effects after disposal or return an asynchronous setup function.
+Settings changes currently stop jobs and clear inserted translations; the user
+explicitly starts translation again. UI display-mode changes alone do not do so.
 
-Providers run in the service worker. Never import them into a content script.
-Never return credentials, raw server errors, request headers or logs to the page.
-Only the provider adapter receives the key. Preserve the abort signal through all I/O.
+## Current composition
 
-## Add a translation-instruction plugin
+| Context | Plugin | Services / effects |
+| --- | --- | --- |
+| Service worker | provider-deepseek | provider.deepseek |
+| Service worker | provider-compatible | provider.compatible |
+| Service worker | glossary, custom-prompt | translation:instructions hooks |
+| Content | extractor | extractor.collect |
+| Content | renderer | renderer.render; restores original DOM on disposal |
+| Content | page | page.start; requires extractor and renderer; cancels queue |
+| Content | dynamic | requires page; owns observer and debounce timer |
+| Content | selection | selection.show; owns document listeners and popup lifecycle |
 
-Append a packaged object to `core/plugins.js`:
+The plugin manager reads both runtime catalogs. New registered entries appear
+without hardcoding another card or adding their IDs to a background allowlist.
+Content entries are queried from the current authorized page. Developer metadata
+is collapsed by default; users see a description, status and working switch.
+
+Content implementations still share `content.js` closures. Scheduling remains
+inside the page plugin implementation rather than a separately swappable service.
+There is no site-adapter registry yet. Those are remaining architectural limits.
+
+## Add a provider
+
+1. Implement a packaged adapter exporting
+   `async translate(text, config, apiKey, signal)`.
+2. Register `{ label, translate }` in `extension/providers/index.js`.
+3. The settings selector, config validation, panel label, and background provider
+   plugin are derived from this registry; they require no additional branching.
+4. Use `config.endpoint` and `config.model`. Non-DeepSeek providers request the
+   exact endpoint origin through the save button. New protocol-specific settings
+   still need validation/UI/cache-key changes.
+5. Test cancellation, 401/429, malformed/truncated responses and secret handling.
+
+The runtime also permits replacing an existing service slot with a bundled
+plugin, provided the original provider is disabled. Tests cover this path.
+Providers run only in the service worker; only their translate call receives the
+API key. Never send credentials, headers or raw server errors to a content script.
+
+## Add a prompt plugin
+
+Add an entry in `extension/core/plugins.js`:
 
 ```js
 {
   id: "preserve-product-names",
   enabled: config => config.style === "faithful",
-  instructions: () => "Keep product names and code identifiers in their original language."
+  instructions: () => "Keep product names in their original language."
 }
 ```
 
-The existing glossary and custom-prompt features use this same interface.
-If a plugin needs a new option, update `DEFAULTS`, validation, UI, and `cacheKey`.
-The latter prevents an old translation from being reused after a rule changes.
+The background composition wraps this descriptor in a runtime plugin. Its
+instruction hook is removed when disabled and restored once when re-enabled.
+Disabling an entry changes the cache key. Hooks receive translation preferences,
+not credentials or DOM access. Page text remains separate user content.
 
-Instruction plugins receive configuration only. They do not receive API keys,
-page DOM, browser APIs, or untrusted executable code. Their returned text becomes
-part of the system message. Page text remains a separate user message.
+## Add a content feature
 
-## Rendering and extraction
+Register it with the content runtime before `configReady` configures the runtime:
 
-`content.js` owns DOM access. It uses text nodes and conservative block grouping.
-It excludes forms, editable content, code and opt-out regions; translations use
-Shadow DOM and `textContent`. Original nodes remain intact so event listeners
-survive. Translation-only mode temporarily hides the original or wraps text nodes,
-and restore reverses those changes.
+```js
+runtime.register({
+  id: "page-indicator",
+  name: "Page indicator",
+  version: "1.0.0",
+  inject: ["page"],
+  setup(ctx) {
+    const indicator = document.createElement("span");
+    indicator.dataset.luma = "indicator";
+    indicator.textContent = "Luma is ready";
+    document.body.append(indicator);
+    ctx.effect(() => indicator.remove());
+    ctx.listen(window, "resize", () => { /* reposition if needed */ });
+  },
+});
+```
 
-Site-specific adapters are not implemented in this first version. If a real site
-needs one, add a narrowly matched packaged adapter and a fixture for that site's
-structure rather than changing collection globally.
+Do not replace original innerHTML, interpret API output as HTML, read form values,
+or bypass host permissions. Own observers, timers, nodes, and requests must have
+cleanup. Add behavioral tests for disable/re-enable and dependency failure.
 
-## Operational boundaries
+## Verification
 
-- Two in-flight requests per tab; each selected request is at most 20,000 characters.
-- Segments of about 2,200 characters; 25-second response deadline.
-- 500 source units per page session; 100 memory-cache entries.
-- Selection translation interrupts whole-page work; no competing hidden job.
-- Settings writes are serialized; translation changes cancel and invalidate results.
-- No arbitrary code plugin marketplace, server daemon, build bundler or analytics.
-
-Acceptance tests for new modules should exercise observable behavior and failures,
-including original content restoration and the credential boundary.
+`npm test` covers the runtime contract and provider handling.
+`npm run test:browser` exercises actual extension pages and content scripts with
+the production manifest, a temporary browser profile and a local fake API.
+`LUMA_LIVE_SMOKE=1 npm run test:browser` additionally checks public-page DOM flows.
+See `QA.md` for exact coverage and the remaining real-API/native-UI gaps.

@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-03T01:28:34.487Z",
+  "tests": [
+    "Settings UI saves credentials and connects through real worker/provider to local fixture API",
+    "Connection checks detect a revoked key even after an earlier successful check",
+    "Settings responsive layout at 390px has no horizontal overflow",
+    "Production manifest denies a new site; panel explains access, then its translate button works after site permission",
+    "Keeping the panel open across a second site uses that site's origin for permission and translation",
+    "Whole-page translation preserves links, code, forms, table/list structure and event handlers",
+    "Content scripts cannot read API key from config messages or trusted storage",
+    "Translation-only and bilingual modes switch without losing original content",
+    "New and changed dynamic content translates without duplicate output",
+    "Selection survives losing page focus before the panel command",
+    "Selection retranslation makes a fresh provider request",
+    "Selection popup returns translation and closes",
+    "Restore removes translations and retains original interactivity",
+    "Authentication failure halts queue; retry recovers all failed blocks without leaking response",
+    "Cancellation aborts in-flight work and prevents late DOM writes",
+    "Opt-in site permission registers automatic translation on reload",
+    "Plugin manager disables selection listeners and restores one functional handler on re-enable",
+    "Renderer unload restores DOM, blocks dependent page/watcher plugins, and re-enable recovers translation",
+    "Glossary plugin toggle changes actual outgoing API instructions and invalidates cached translations",
+    "Panel layout and plugin settings dialog work at 390px",
+    "Live DOM smoke (mock translation API): https://example.com/",
+    "Live DOM smoke (mock translation API): https://developer.chrome.com/docs/extensions/develop/concepts/activeTab",
+    "Saved API key can be deleted without exposing its value"
+  ],
+  "fixtureOnly": false,
+  "nativePermissionPromptTested": false,
+  "realDeepSeekTested": false
+}
